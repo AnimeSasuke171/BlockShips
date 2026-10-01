@@ -277,11 +277,11 @@ public class BlockStructureScanner {
     public static ShipModel scanStructure(Location wheelLocation, BlockFace facing) {
         // Get max ship size from config
         BlockShipsPlugin plugin = (BlockShipsPlugin) org.bukkit.Bukkit.getPluginManager().getPlugin("BlockShips");
-        int maxShipSize = 1000; // Default
-        int maxScanSize = 5000; // Default
+        int maxShipSize = 5000; // Default
+        int maxScanSize = 10000; // Default
         if (plugin != null) {
-            maxShipSize = plugin.getConfig().getInt("custom-ships.max-ship-size", 1000);
-            maxScanSize = plugin.getConfig().getInt("custom-ships.max-scan-size", 5000);
+            maxShipSize = plugin.getConfig().getInt("custom-ships.max-ship-size", 5000);
+            maxScanSize = plugin.getConfig().getInt("custom-ships.max-scan-size", 10000);
         }
 
         // Use ShipDetector to flood fill and find all ship blocks
