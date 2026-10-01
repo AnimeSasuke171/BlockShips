@@ -1077,7 +1077,9 @@ public class ShipWheelManager {
         for (Location loc : blocks) {
             Block block = loc.getBlock();
             BlockProperties props = configManager.getProperties(block.getType(), block.getBlockData());
-            totalWeight += props.getWeight();
+            if (props.hasWeight()) {
+                totalWeight += props.getWeight();
+            }
         }
 
         return totalWeight;
