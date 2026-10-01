@@ -23,6 +23,8 @@ import java.util.logging.Logger;
  * Parses blocks.yml and provides fast lookups.
  */
 public class BlockConfigManager {
+    private static final String AUTO_ALLOW_KEY = "auto_allow";
+
     private static BlockConfigManager instance;
     private final Map<Material, BlockProperties> blockPropertiesCache = new EnumMap<>(Material.class);
     private final BlockShipsPlugin plugin;
@@ -59,6 +61,9 @@ public class BlockConfigManager {
 
         // Parse all block entries from root level
         for (String key : blocksConfig.getKeys(false)) {
+            if (key.equals(AUTO_ALLOW_KEY)) {
+                continue;  // settings section, not a block entry
+            }
             ConfigurationSection blockConfig = blocksConfig.getConfigurationSection(key);
             if (blockConfig == null) {
                 continue;
@@ -71,7 +76,18 @@ public class BlockConfigManager {
             }
         }
 
-        logger.info("Loaded block configuration for " + blockPropertiesCache.size() + " materials from blocks.yml");
+        int explicitCount = blockPropertiesCache.size();
+
+        // Anything not explicitly configured above gets allowed with a group-based weight.
+        // Explicit entries always win because they were registered first.
+        try {
+            applyAutoAllow(blocksConfig.getConfigurationSection(AUTO_ALLOW_KEY));
+        } catch (Exception e) {
+            logger.warning("Failed to apply auto_allow section: " + e.getMessage());
+        }
+
+        logger.info("Loaded block configuration for " + blockPropertiesCache.size() + " materials from blocks.yml ("
+            + explicitCount + " explicit, " + (blockPropertiesCache.size() - explicitCount) + " auto-allowed)");
     }
 
     /**
@@ -135,7 +151,7 @@ public class BlockConfigManager {
             List<?> rulesList = config.getList("collider.rules");
 
             // Parse conditional properties
-            List<BlockProperties.ConditionalRule> conditionalRules = parseConditionalRules(rulesList);
+            List<BlockProperties.ConditionalRule> conditionalRules = parseConditionalRules(rulesList, allowed, weight);
             BlockProperties baseProps = new BlockProperties(allowed, weight, CollisionConfig.DEFAULT, leadable, seat, displayRotation, interaction, storage, conditionalRules);
 
             applyToMaterials(key, baseProps);
@@ -148,7 +164,7 @@ public class BlockConfigManager {
         }
     }
 
-    private List<BlockProperties.ConditionalRule> parseConditionalRules(List<?> rulesConfigs) {
+    private List<BlockProperties.ConditionalRule> parseConditionalRules(List<?> rulesConfigs, boolean parentAllowed, Integer parentWeight) {
         List<BlockProperties.ConditionalRule> rules = new ArrayList<>();
         if (rulesConfigs == null) return rules;
 
@@ -165,8 +181,9 @@ public class BlockConfigManager {
             CollisionConfig collider = parseCollider(ruleMap.get("collider"));
             boolean seat = ruleMap.containsKey("seat") && Boolean.TRUE.equals(ruleMap.get("seat"));
 
-            // Create properties (inherit weight/allowed from parent)
-            BlockProperties props = new BlockProperties(true, 0, collider, false, seat);
+            // Create properties (inherit weight/allowed from parent so that e.g. slabs and
+            // stairs keep the weight of their block group instead of silently weighing 0)
+            BlockProperties props = new BlockProperties(parentAllowed, parentWeight, collider, false, seat);
 
             rules.add(new BlockProperties.ConditionalRule(matcher, props));
         }
@@ -323,6 +340,10 @@ public class BlockConfigManager {
     }
 
     private Set<Material> resolveTag(String tagName) {
+        return resolveTag(tagName, false);
+    }
+
+    private Set<Material> resolveTag(String tagName, boolean quiet) {
         try {
             NamespacedKey key = NamespacedKey.minecraft(tagName.toLowerCase());
             Tag<Material> tag = Bukkit.getTag(Tag.REGISTRY_BLOCKS, key, Material.class);
@@ -330,12 +351,98 @@ public class BlockConfigManager {
             if (tag != null) {
                 return tag.getValues();
             } else {
-                logger.warning("Unknown tag: #" + tagName);
+                if (!quiet) logger.warning("Unknown tag: #" + tagName);
                 return EnumSet.noneOf(Material.class);
             }
         } catch (Exception e) {
-            logger.warning("Failed to resolve tag #" + tagName + ": " + e.getMessage());
+            if (!quiet) logger.warning("Failed to resolve tag #" + tagName + ": " + e.getMessage());
             return EnumSet.noneOf(Material.class);
+        }
+    }
+
+    /**
+     * Resolve a blocks.yml pattern (#tag, *wildcard*, or exact material name) to materials.
+     * Unknown names/tags resolve to nothing (quietly when {@code quiet}) so that one blocks.yml
+     * can be shared across Minecraft versions that add or remove materials.
+     */
+    private Set<Material> resolvePattern(String pattern, boolean quiet) {
+        if (WildcardMatcher.isTag(pattern)) {
+            return resolveTag(pattern.substring(1), quiet);
+        }
+        if (WildcardMatcher.isWildcard(pattern)) {
+            return WildcardMatcher.getMatchingMaterials(pattern);
+        }
+        Material material = Material.matchMaterial(pattern);
+        if (material == null) {
+            if (!quiet) logger.warning("Unknown material: " + pattern);
+            return EnumSet.noneOf(Material.class);
+        }
+        return EnumSet.of(material);
+    }
+
+    private record AutoGroup(String name, Integer weight, Set<Material> materials) {}
+
+    /**
+     * Allow every remaining building block with a weight determined by its group.
+     *
+     * Driven by the {@code auto_allow} section of blocks.yml:
+     *   enabled:          master switch
+     *   default_weight:   weight for blocks that match no group
+     *   include_non_solid: also allow blocks without collision (plants, etc.). Default false.
+     *   exclude:          patterns that must never be auto-allowed (fluids, technical blocks, ...)
+     *   groups:           ordered list of {name, weight, match: [patterns]}; first match wins
+     *
+     * Blocks that already have an explicit blocks.yml entry are left untouched.
+     */
+    private void applyAutoAllow(ConfigurationSection section) {
+        if (section == null || !section.getBoolean("enabled", true)) {
+            return;
+        }
+
+        int defaultWeight = section.getInt("default_weight", 2);
+        boolean includeNonSolid = section.getBoolean("include_non_solid", false);
+
+        Set<Material> excluded = EnumSet.noneOf(Material.class);
+        for (String pattern : section.getStringList("exclude")) {
+            excluded.addAll(resolvePattern(pattern, true));
+        }
+
+        List<AutoGroup> groups = new ArrayList<>();
+        for (Map<?, ?> raw : section.getMapList("groups")) {
+            Object matchObj = raw.get("match");
+            if (!(matchObj instanceof List<?> matchList)) {
+                continue;
+            }
+
+            Integer weight = defaultWeight;
+            if (raw.containsKey("weight")) {
+                Object w = raw.get("weight");
+                weight = (w instanceof Number n) ? Integer.valueOf(n.intValue()) : null;  // null = excluded from density
+            }
+
+            Set<Material> materials = EnumSet.noneOf(Material.class);
+            for (Object pattern : matchList) {
+                materials.addAll(resolvePattern(String.valueOf(pattern), true));
+            }
+            groups.add(new AutoGroup(String.valueOf(raw.get("name")), weight, materials));
+        }
+
+        for (Material material : Material.values()) {
+            if (material.isLegacy() || !material.isBlock() || material.isAir()) continue;
+            if (blockPropertiesCache.containsKey(material)) continue;  // explicit entry wins
+            if (excluded.contains(material)) continue;
+            if (!includeNonSolid && !material.isSolid()) continue;
+
+            Integer weight = defaultWeight;
+            for (AutoGroup group : groups) {
+                if (group.materials().contains(material)) {
+                    weight = group.weight();
+                    break;
+                }
+            }
+
+            CollisionConfig collider = material.isSolid() ? CollisionConfig.DEFAULT : CollisionConfig.NONE;
+            blockPropertiesCache.put(material, new BlockProperties(true, weight, collider, false, false));
         }
     }
 
