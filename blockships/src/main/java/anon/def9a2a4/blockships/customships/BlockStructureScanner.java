@@ -236,7 +236,8 @@ public class BlockStructureScanner {
         String[] patterns = {
             "BANNER", "SIGN", "TORCH", "BUTTON", "LEVER", "CARPET", "PRESSURE_PLATE",
             "LADDER", "LANTERN", "BELL", "CANDLE",
-            "REPEATER", "COMPARATOR", "TRIPWIRE", "RAIL"
+            "REPEATER", "COMPARATOR", "TRIPWIRE", "RAIL",
+            "VINE", "LICHEN", "PETALS", "CORAL_FAN", "SCULK_VEIN", "FROGSPAWN"
         };
 
         for (Material mat : Material.values()) {
