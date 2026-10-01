@@ -15,6 +15,10 @@
 #   4+ = very heavy (gold, diamond, netherite)
 #   null = excluded from density calculation (block exists but doesn't affect buoyancy)
 #
+# AUTO-ALLOW: at the bottom of this file, the `auto_allow` section allows every other solid
+#   building block and assigns it a weight by group. Explicit entries in this file always win.
+#   Set `auto_allow.enabled: false` to go back to a strict whitelist.
+#
 # Buoyancy: Ships float based on mean density (totalWeight / blockCount)
 #   - density < air-density (0.0): becomes airship
 #   - density = water-density (2.5): floats at center of volume
@@ -816,3 +820,140 @@ purpur_stairs:
         seat: true
       - condition: {half: "TOP"}
         collider: true
+
+# === GENERIC SLABS & STAIRS (any material not configured above) ===
+# Same collider shapes as the wooden versions; weight comes from the auto_allow groups below
+# (conditional rules inherit the weight of their parent entry).
+"#slabs":
+  allowed: true
+  weight: 3
+  collider:
+    type: conditional
+    rules:
+      - condition: {type: "BOTTOM"}
+        collider:
+          size: 0.5
+          offset: [0, 0, 0]
+      - condition: {type: "TOP"}
+        collider:
+          size: 0.5
+          offset: [0, 0.5, 0]
+      - condition: {type: "DOUBLE"}
+        collider: true
+
+"#stairs":
+  allowed: true
+  weight: 3
+  collider:
+    type: conditional
+    rules:
+      - condition: {half: "BOTTOM"}
+        collider:
+          size: 0.5
+          offset: [0, 0, 0]
+        seat: true
+      - condition: {half: "TOP"}
+        collider: true
+
+
+# =====================================================================
+# AUTO-ALLOW: every other building block, weighted by group
+# =====================================================================
+# Any solid block NOT listed explicitly above is allowed, with the weight of the first
+# group below that matches it (or default_weight if none does). Patterns can be:
+#   exact names ("obsidian"), wildcards ("*_ore"), or block tags ("#stone_bricks").
+# Unknown names/tags are silently ignored, so this works across Minecraft versions.
+#
+# Weight guide (water density is 2.5 by default - a ship floats if its MEAN weight is below it):
+#   1 = lighter than wood (leaves, ice, plants, glass-like)      2 = wood-like
+#   3 = stone/dirt/sand                                          4 = ores / dense stone
+#   5+ = ballast (metals, gems)                                  negative = buoyant
+#   weight: null = block is allowed but ignored in density math
+auto_allow:
+  enabled: true
+  default_weight: 3
+  include_non_solid: false   # true also allows plants, rails, etc. (no collider)
+
+  # Never auto-allowed: fluids, technical blocks, and blocks with an inventory or data that
+  # ships cannot preserve (they would lose their contents when assembled).
+  exclude:
+    - water
+    - lava
+    - bubble_column
+    - fire
+    - soul_fire
+    - nether_portal
+    - end_portal
+    - end_gateway
+    - end_portal_frame
+    - barrier
+    - light
+    - structure_void
+    - structure_block
+    - jigsaw
+    - test_block
+    - test_instance_block
+    - command_block
+    - chain_command_block
+    - repeating_command_block
+    - moving_piston
+    - piston_head
+    - bedrock
+    - reinforced_deepslate
+    - spawner
+    - trial_spawner
+    - vault
+    - jukebox
+    - decorated_pot
+    - campfire
+    - soul_campfire
+    - crafter
+    - beehive
+    - bee_nest
+    - suspicious_sand
+    - suspicious_gravel
+    - sculk_sensor
+    - calibrated_sculk_sensor
+    - sculk_shrieker
+    - sculk_catalyst
+    - respawn_anchor
+    - conduit
+
+  # First matching group wins. Edit weights or add groups freely.
+  groups:
+    - name: light_organic        # floats well
+      weight: 1
+      match: ["#leaves", "hay_block", "sponge", "wet_sponge", "slime_block", "honey_block",
+              "honeycomb_block", "melon", "pumpkin", "carved_pumpkin", "jack_o_lantern",
+              "*_mushroom_block", "mushroom_stem", "moss_block", "pale_moss_block",
+              "cobweb", "target", "dried_kelp_block", "bamboo_block", "stripped_bamboo_block",
+              "scaffolding", "tnt", "cake", "mangrove_roots", "muddy_mangrove_roots"]
+    - name: ice_and_snow         # lighter than water
+      weight: 1
+      match: ["ice", "packed_ice", "blue_ice", "snow_block", "snow", "powder_snow"]
+    - name: wood_like
+      weight: 2
+      match: ["#planks", "#logs", "#wooden_slabs", "#wooden_stairs", "*_wood", "*_hyphae",
+              "crimson_stem", "warped_stem", "stripped_crimson_stem", "stripped_warped_stem",
+              "bamboo_mosaic*", "note_block", "bone_block", "nether_wart_block",
+              "warped_wart_block", "*_coral_block", "sculk", "cactus", "creaking_heart",
+              "resin_block", "*resin_brick*"]
+    - name: earth_and_sand
+      weight: 3
+      match: ["#dirt", "#sand", "gravel", "clay", "mud", "packed_mud", "*mud_brick*",
+              "soul_sand", "soul_soil", "netherrack", "magma_block", "grass_block", "mycelium",
+              "podzol", "dirt_path", "farmland", "*_concrete_powder", "crimson_nylium",
+              "warped_nylium"]
+    - name: stone_masonry
+      weight: 3
+      match: ["stone", "cobblestone", "mossy_cobblestone", "smooth_stone", "granite",
+              "diorite", "andesite", "*sandstone*", "*tuff*", "calcite", "dripstone_block",
+              "basalt", "*blackstone*", "*deepslate*", "*bricks", "*_brick_*", "*terracotta",
+              "*_concrete", "*quartz*", "*prismarine*", "end_stone", "#walls", "polished_*",
+              "chiseled_*", "cut_*", "smooth_*", "*_granite", "*_diorite", "*_andesite"]
+    - name: dense_ores           # heavy: use sparingly, or as ballast
+      weight: 4
+      match: ["*_ore", "ancient_debris", "coal_block", "amethyst_block", "budding_amethyst"]
+    - name: crying_obsidian      # matches obsidian's weight in the explicit entries above
+      weight: 10
+      match: ["crying_obsidian"]
