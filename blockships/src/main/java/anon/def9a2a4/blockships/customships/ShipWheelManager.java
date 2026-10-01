@@ -922,8 +922,8 @@ public class ShipWheelManager {
         }
 
         // Get max ship size from config
-        int maxShipSize = ((BlockShipsPlugin) plugin).getConfig().getInt("custom-ships.max-ship-size", 1000);
-        int maxScanSize = ((BlockShipsPlugin) plugin).getConfig().getInt("custom-ships.max-scan-size", 5000);
+        int maxShipSize = ((BlockShipsPlugin) plugin).getConfig().getInt("custom-ships.max-ship-size", 5000);
+        int maxScanSize = ((BlockShipsPlugin) plugin).getConfig().getInt("custom-ships.max-scan-size", 10000);
 
         // Run ship detection
         ShipDetector detector = new ShipDetector(maxShipSize, maxScanSize);
