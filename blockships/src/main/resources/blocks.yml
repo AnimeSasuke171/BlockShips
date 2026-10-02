@@ -38,7 +38,7 @@ sea_lantern:
 
 beacon:
   allowed: true
-  weight: -15
+  weight: -25
   collider: true
 
 shroomlight:
